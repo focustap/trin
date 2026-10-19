@@ -86,147 +86,268 @@ nav.active{opacity:1;visibility:visible}
 <script>
 (()=>{
 "use strict";
-const canvas=document.getElementById("canvas"),ctx=canvas.getContext("2d",{alpha:true});
 const $=id=>document.getElementById(id);
-const words=["I love you","Je t'aime","Te amo","Ti amo","Ich liebe dich","Eu te amo","愛してる","사랑해","我爱你","Ik hou van jou","Jag älskar dig","Jeg elsker deg","Kocham cię","Σ' αγαπώ","Seni seviyorum","Mahal kita","Aku cinta kamu","Я тебя люблю","أحبك","אני אוהב אותך","Te iubesc","Volim te","Milujem tě","Miluji tě","Nakupenda","Aloha wau iā ʻoe","Mina rakastan sinua","Szeretlek","Anh yêu em","Jeg elsker dig"];
+const canvas=$("canvas"),ctx=canvas.getContext("2d",{alpha:true});
 const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
-const rand=(a,b)=>a+Math.random()*(b-a),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
-let W=0,H=0,dpr=1,scene=0,sceneAt=0,startAt=0,particles=[],heartReady=false,cowReady=false,cowCanvas=null,cowZoom=1,lastTime=0,nextTimer=null,cowImage=null;
-const timings=[0,7800,7000,9300,0];
-const rgb=(r,g,b)=>"rgb("+r+","+g+","+b+")";
-for(let i=0;i<54;i++){const s=document.createElement("i");s.className="spark";s.style.setProperty("--x",rand(0,100)+"%");s.style.setProperty("--y",rand(0,100)+"%");s.style.setProperty("--dur",rand(3,8)+"s");s.style.setProperty("--delay",-rand(0,8)+"s");$("sparkles").appendChild(s)}
-for(let i=0;i<4;i++){let d=document.createElement("i");d.className="dot";$("dots").appendChild(d)}
+const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
+const lerp=(a,b,t)=>a+(b-a)*t;
+const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
+const languages=[
+"I love you","Je t'aime","Te amo","Ti amo","Ich liebe dich",
+"Eu te amo","愛してる","사랑해","我爱你","Ik hou van jou",
+"Jag älskar dig","Σ' αγαπώ","Aku cinta kamu","Anh yêu em",
+"Seni seviyorum","Я тебя люблю","ฉันรักเธอ","Kocham cię",
+"Volim te","Mahal kita","Te iubesc","Jeg elsker deg",
+"أحبك","Szeretlek","Miluji tě","Nakupenda"
+];
+const palette=["#ffb7af","#ffaba6","#ff9b9b","#ffb9ba","#ffc3c8","#f59da8","#ffd1cf"];
+const timings=[0,8200,7500,10000,0];
+let W=innerWidth,H=innerHeight,DPR=1,scene=0,sceneAt=performance.now();
+let nodes=[],cowImage=null,cowCanvas=null,cowReady=false,cowZoom=1,nextTimer=null,resizeTimer=null;
+for(let i=0;i<54;i++){
+ const s=document.createElement("i");s.className="spark";
+ s.style.setProperty("--x",Math.random()*100+"%");
+ s.style.setProperty("--y",Math.random()*100+"%");
+ s.style.setProperty("--dur",(3+Math.random()*5)+"s");
+ s.style.setProperty("--delay",(-Math.random()*8)+"s");$("sparkles").appendChild(s);
+}
+for(let i=0;i<4;i++){const dot=document.createElement("i");dot.className="dot";$("dots").appendChild(dot)}
 const dots=[...$("dots").children];
-const mask=document.createElement("canvas"),mctx=mask.getContext("2d",{willReadFrequently:true});
-const heartPath=(c,cx,cy,size)=>{c.beginPath();for(let t=0;t<=Math.PI*2+.03;t+=.025){let x=16*Math.pow(Math.sin(t),3)/18;let y=-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))/18;let X=cx+x*size,Y=cy+y*size;t===0?c.moveTo(X,Y):c.lineTo(X,Y)}c.closePath()};
-function shapePoints(which,count){
-mask.width=Math.max(1,Math.round(W));mask.height=Math.max(1,Math.round(H));
-mctx.clearRect(0,0,W,H);mctx.fillStyle="#fff";
-if(which==="trin"){
-let sz=Math.min(H*.43,W*.265),font="";
-do {font="900 "+sz+"px Arial, sans-serif";mctx.font=font;sz-=3}while(mctx.measureText("TRIN").width>W*.86&&sz>28);
-mctx.textAlign="center";mctx.textBaseline="middle";mctx.fillText("TRIN",W/2,H*.47);
-}else{let size=Math.min(W*.43,H*.46);heartPath(mctx,W/2,H*.45,size);mctx.fill()}
-const data=mctx.getImageData(0,0,mask.width,mask.height).data;
-const candidates=[];const step=which==="trin"?4:4;
-for(let y=Math.floor(H*.13);y<H*.78;y+=step)for(let x=0;x<W;x+=step){if(data[(Math.floor(y)*mask.width+Math.floor(x))*4+3]>100)candidates.push([x,y])}
-const points=[];for(let i=0;i<count;i++){let q=candidates[Math.floor(Math.random()*candidates.length)]||[W/2,H/2];points.push({x:q[0]+rand(-2,2),y:q[1]+rand(-2,2)})}
-return points;
+const mask=document.createElement("canvas"),m=mask.getContext("2d",{willReadFrequently:true});
+function buildMask(kind){
+ mask.width=W;mask.height=H;m.clearRect(0,0,W,H);
+ m.fillStyle="#fff";m.strokeStyle="#fff";
+ if(kind==="trin"){
+  let f=Math.min(H*.49,W*.265);
+  m.font="900 "+f+"px Arial Black, Arial, sans-serif";
+  while(m.measureText("TRIN").width>W*.87&&f>28){f-=3;m.font="900 "+f+"px Arial Black, Arial, sans-serif"}
+  m.textAlign="center";m.textBaseline="middle";m.lineWidth=f*.105;m.lineJoin="round";
+  m.strokeText("TRIN",W*.5,H*.448);m.fillText("TRIN",W*.5,H*.448);
+ }else{
+  const scale=Math.min(W*.46,H*.35),cx=W*.5,cy=H*.436;
+  m.beginPath();
+  for(let t=0;t<=Math.PI*2+.02;t+=.018){
+   const xx=(16*Math.sin(t)**3/18)*scale;
+   const yy=-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))/18*scale;
+   if(t===0)m.moveTo(cx+xx,cy+yy);else m.lineTo(cx+xx,cy+yy);
+  }
+  m.closePath();m.fill();
+ }
+ return m.getImageData(0,0,W,H).data;
 }
-function makeParticles(){
-const n=clamp(Math.floor(W*H/580),500,2300);
-const a=shapePoints("trin",n),b=shapePoints("heart",n);
-particles=Array.from({length:n},(_,i)=>({from:a[i],to:b[i],x:rand(0,W),y:rand(0,H),phase:rand(0,6),delay:rand(0,1.1),word:words[i%words.length],color:i%5===0?"#fff1f6":i%4===0?"#ffd0e0":i%3===0?"#e7a9c8":"#f8b8cf",scale:rand(.8,1.18)}));
-heartReady=true;
+// Find mask runs and lay phrases in rows, measuring their real width.
+// Phrases cannot collide or draw indiscriminately on top of each other.
+function makeLayout(kind){
+ const pixels=buildMask(kind);
+ const isFilled=(x,y)=>{
+  x=Math.round(x);y=Math.round(y);
+  if(x<0||y<0||x>=W||y>=H)return false;
+  return pixels[(y*W+x)*4+3]>125;
+ };
+ const base=kind==="heart"?clamp(W/63,15,25):clamp(W/91,11,19);
+ const line=kind==="heart"?base*1.48:base*1.40;
+ const placements=[],startY=H*.18,endY=H*.74;
+ let globalIndex=0,rowIndex=0;
+ for(let y=startY;y<endY;y+=line,rowIndex++){
+  const runs=[];let left=-1;
+  for(let x=Math.floor(W*.055);x<=Math.ceil(W*.945);x+=3){
+   if(isFilled(x,y)){
+    if(left<0)left=x;
+   }else if(left>=0){if(x-left>base*1.65)runs.push([left,x]);left=-1}
+  }
+  if(left>=0)runs.push([left,W*.945]);
+  for(const [a,b] of runs){
+   let cursor=a+2;
+   const max=b-2;
+   while(cursor+base*1.1<max){
+    let selected=null;
+    // Rotate language choice across rows; prioritize readable larger type.
+    const offset=(globalIndex*7+rowIndex*5)%languages.length;
+    for(const sizeScale of [1.12,1,.87,.75,.64]){
+     const fontSize=base*sizeScale;
+     m.font="700 "+fontSize+"px Arial, sans-serif";
+     for(let k=0;k<languages.length;k++){
+      const phrase=languages[(offset+k)%languages.length];
+      const width=m.measureText(phrase).width;
+      const gap=Math.max(4,fontSize*.28);
+      if(width+gap>max-cursor)continue;
+      const cx=cursor+width/2;
+      // Prevent full words being placed outside the letter / heart silhouette.
+      let hits=0;
+      for(const u of [.06,.26,.5,.74,.94]){
+       if(isFilled(cursor+width*u,y))hits++;
+       if(isFilled(cursor+width*u,y-fontSize*.52))hits++;
+      }
+      if(hits<8)continue;
+      selected={text:phrase,x:cx,y,font:fontSize,width,color:palette[(globalIndex+rowIndex)%palette.length]};
+      break;
+     }
+     if(selected)break;
+    }
+    if(selected){placements.push(selected);cursor+=selected.width+Math.max(4,selected.font*.29);globalIndex++}
+    else cursor+=Math.max(4,base*.30);
+   }
+  }
+ }
+ return placements.sort((a,b)=>a.y-b.y||a.x-b.x);
 }
-function size(){W=innerWidth;H=innerHeight;dpr=Math.min(devicePixelRatio||1,2);canvas.width=Math.round(W*dpr);canvas.height=Math.round(H*dpr);ctx.setTransform(dpr,0,0,dpr,0,0);makeParticles();if(cowImage&&cowImage.complete&&cowImage.naturalWidth)renderCow()}
-function ease(v){v=clamp(v,0,1);return v*v*(3-2*v)}
-function lerp(a,b,t){return a+(b-a)*t}
-function showCaption(){
-["trinCaption","heartCaption","cowCaption"].forEach((id,i)=>$(id).classList.toggle("visible",scene===i+1));
+function rebuildWords(){
+ const first=makeLayout("trin"),second=makeLayout("heart");
+ const count=Math.max(first.length,second.length);
+ // Interpolate matching typography units, revealing extras instead of overlapping them.
+ nodes=Array.from({length:count},(_,i)=>{
+  const fi=Math.floor(i*first.length/count),ti=Math.floor(i*second.length/count);
+  const f=first[fi],t=second[ti];
+  return {from:f,to:t,showFrom:i*first.length/count-fi<first.length/count,
+          showTo:i*second.length/count-ti<second.length/count,
+          delay:((i*37)%101)/101*.66,offx:Math.sin(i*21.17)*W*.42,
+          offy:Math.cos(i*12.87)*H*.38};
+ });
+ // Prevent visually duplicated phrases when one layout has fewer cells.
+ const assign=(arr,key)=>{
+  const used=new Set();
+  for(const n of nodes){
+   const point=n[key];if(used.has(point)){n[key==="from"?"showFrom":"showTo"]=false}
+   else used.add(point);
+  }
+ };
+ assign(first,"from");assign(second,"to");
 }
-function goto(s,autoplay=true){
-clearTimeout(nextTimer);scene=clamp(s,0,4);sceneAt=performance.now();startAt=sceneAt;lastTime=sceneAt;
-$("intro").classList.toggle("active",scene===0);$("final").classList.toggle("active",scene===4);
-$("nav").classList.toggle("active",scene!==0);$("zoom").classList.toggle("active",scene===3);
-$("chapter").textContent=["A little something for you","01 / In every language","02 / One heart","03 / In every little thing","04 / Eleven months"][scene];
-dots.forEach((d,i)=>d.classList.toggle("on",i===scene-1));
-$("back").disabled=scene===0;$("next").textContent=scene===4?"↻ Replay":"Next →";
-$("error").style.display="none";showCaption();
-if(scene===3&&!cowReady){$("error").textContent="Preparing the little cow surprise…";$("error").style.display="block"}
-if(autoplay&&timings[scene]&&!reduce)nextTimer=setTimeout(()=>goto(scene+1),timings[scene]);
-}
-function renderParticles(now){
-const since=now-sceneAt,transition=reduce?1:ease((since-300)/3000);
-const mode=scene===1?0:1;
-ctx.save();ctx.textBaseline="middle";ctx.textAlign="center";
-let fontSize=clamp(Math.min(W/110,H/77),6.5,11.5);
-for(const p of particles){
-let fx=p.from.x,fy=p.from.y,tx=p.to.x,ty=p.to.y;
-let t=mode===0?0:transition;
-let x=lerp(fx,tx,t),y=lerp(fy,ty,t);
-if(scene===1){let arrive=reduce?1:ease((since-p.delay*2200)/2400);x=lerp(p.x,fx,arrive);y=lerp(p.y,fy,arrive)}
-const beat=scene===2?1+Math.sin(now/320)*.013:1;
-x=W/2+(x-W/2)*beat;y=H*.45+(y-H*.45)*beat;
-x+=Math.sin(now*.00063+p.phase)*.45;y+=Math.cos(now*.0008+p.phase)*.45;
-let alpha=scene===1?(reduce?1:ease((since-p.delay*1800)/2200)):1;
-ctx.globalAlpha=.53+alpha*.42;ctx.fillStyle=p.color;ctx.font="600 "+(fontSize*p.scale).toFixed(1)+"px 'DM Sans',Arial,sans-serif";
-ctx.fillText(p.word,x,y);
-}ctx.restore();
+function drawTypography(now){
+ const elapsed=now-sceneAt;
+ const morph=scene===2?(reduce?1:smooth((elapsed-250)/3300)):0;
+ ctx.save();ctx.textAlign="center";ctx.textBaseline="middle";
+ for(const n of nodes){
+  const a=n.from,b=n.to;
+  const arrive=reduce?1:smooth((elapsed-70-n.delay*2100)/2100);
+  const xBase=lerp(a.x,b.x,morph),yBase=lerp(a.y,b.y,morph);
+  let x=xBase,y=yBase,opacity=1,fs=lerp(a.font,b.font,morph);
+  if(scene===1){
+   x=lerp(a.x+n.offx,a.x,arrive);
+   y=lerp(a.y+n.offy,a.y,arrive);
+   opacity=arrive*(n.showFrom?1:0);
+  }else{
+   const appearFrom=n.showFrom?1:smooth((morph-.24)/.4);
+   const appearTo=n.showTo?1:1-smooth((morph-.50)/.4);
+   opacity=appearFrom*appearTo;
+   const pulse=1+Math.sin(now/370)*.012*morph;
+   x=W*.5+(x-W*.5)*pulse;y=H*.44+(y-H*.44)*pulse;
+  }
+  if(opacity<.01)continue;
+  ctx.globalAlpha=opacity*.96;
+  ctx.fillStyle=scene===2&&morph>.5?b.color:a.color;
+  ctx.shadowColor="#ff7b87";ctx.shadowBlur=5;
+  ctx.font="700 "+fs.toFixed(1)+"px Arial, sans-serif";
+  // Preserve the original phrase through the morph, then switch to target phrase
+  // while the units are moving, not as a hard scene cut.
+  if(scene===2&&morph>.50)ctx.fillText(b.text,x,y);
+  else ctx.fillText(a.text,x,y);
+ }
+ ctx.restore();
 }
 function renderCow(){
-if(!cowImage||!cowImage.naturalWidth)return;
-const iw=cowImage.naturalWidth,ih=cowImage.naturalHeight;
-const output=document.createElement("canvas"),c=output.getContext("2d",{alpha:true});
-output.width=Math.ceil(W*1.45);output.height=Math.ceil(H*1.45);
-let w=output.width,h=output.height;
-// Draw photograph ONLY to an inaccessible sampling canvas. Never draw it to the visible canvas.
-const sample=document.createElement("canvas"),s=sample.getContext("2d",{willReadFrequently:true});
-sample.width=w;sample.height=h;
-const factor=Math.max(w/iw,h/ih),sw=iw*factor,sh=ih*factor;
-s.drawImage(cowImage,(w-sw)/2,(h-sh)/2,sw,sh);
-const pixels=s.getImageData(0,0,w,h).data;
-// Every visible pixel in this portrait comes from glyphs, not from the source photograph.
-c.clearRect(0,0,w,h);c.textAlign="left";c.textBaseline="top";
-const cell=clamp(Math.round(w/210),5,9),line=cell*1.43;
-const fontSize=cell*1.5;c.font="800 "+fontSize+"px monospace";
-const message="i love you ♡ i love you ♡ i love you ♡ ";
-let row=0;
-for(let y=0;y<h;y+=line){
- let col=0;
- for(let x=0;x<w;x+=cell){
-  let px=Math.floor(Math.min(w-1,x+cell/2)),py=Math.floor(Math.min(h-1,y+line/2));
-  let k=(py*w+px)*4,r=pixels[k],g=pixels[k+1],b=pixels[k+2];
-  // Lift dark fur tones so even shaded text is legible against deep plum.
-  const lift=0.28;c.fillStyle=rgb(Math.round(r*(1-lift)+255*lift),Math.round(g*(1-lift)+190*lift),Math.round(b*(1-lift)+200*lift));
-  c.fillText(message[(col+row*7)%message.length],x,y);
-  col++;
- }row++;
-}
-cowCanvas=output;cowReady=true;if(scene===3)$("error").style.display="none";
+ if(!cowImage||!cowImage.naturalWidth)return;
+ const density=1.25;
+ const cw=Math.ceil(W*density),ch=Math.ceil(H*density);
+ const sample=document.createElement("canvas");sample.width=cw;sample.height=ch;
+ const s=sample.getContext("2d",{willReadFrequently:true});
+ const f=Math.max(cw/cowImage.naturalWidth,ch/cowImage.naturalHeight);
+ const sw=cowImage.naturalWidth*f,sh=cowImage.naturalHeight*f;
+ // The original photo is drawn ONLY onto a temporary, invisible sample canvas.
+ s.drawImage(cowImage,(cw-sw)/2,(ch-sh)/2,sw,sh);
+ const pixels=s.getImageData(0,0,cw,ch).data;
+ const output=document.createElement("canvas");output.width=cw;output.height=ch;
+ const c=output.getContext("2d");
+ c.clearRect(0,0,cw,ch);c.textAlign="left";c.textBaseline="top";
+ const font=clamp(Math.round(cw/160),9,13);
+ const cell=font*.60,leading=font*.74;
+ c.font="900 "+font+"px 'Courier New', monospace";
+ const phrase="i love you i love you i love you ";
+ let row=0;
+ for(let y=0;y<ch;y+=leading,row++){
+  const offset=row%2?cell*.5:0;
+  for(let col=0,x=-offset;x<cw;x+=cell,col++){
+   const ix=clamp(Math.floor(x+cell*.5),0,cw-1);
+   const iy=clamp(Math.floor(y+font*.45),0,ch-1);
+   const k=(iy*cw+ix)*4;
+   let r=pixels[k],g=pixels[k+1],b=pixels[k+2];
+   // Make shaded grass and fur visible on the dark backdrop while preserving color.
+   const lum=(r*0.2126+g*0.7152+b*.0722);
+   const lift=lum<65?(65-lum)*.67:0;
+   r=clamp(Math.round(r*.98+14+lift),0,255);
+   g=clamp(Math.round(g*.98+10+lift),0,255);
+   b=clamp(Math.round(b*.98+8+lift),0,255);
+   c.fillStyle="rgb("+r+","+g+","+b+")";
+   // Every visible mark is a real character of the repeated phrase.
+   c.fillText(phrase[(col+row*11)%phrase.length],x,y);
+  }
+ }
+ cowCanvas=output;cowReady=true;
+ if(scene===3)$("error").style.display="none";
 }
 function drawCow(now){
-if(!cowCanvas)return;
-let fade=reduce?1:ease((now-sceneAt)/2200);
-ctx.save();ctx.globalAlpha=fade;
-let baseW=W,baseH=H;
-let z=cowZoom;
-ctx.translate(W/2,H/2);ctx.scale(z,z);
-ctx.drawImage(cowCanvas,-baseW/2,-baseH/2,baseW,baseH);
-ctx.restore();
+ if(!cowCanvas)return;
+ const fade=reduce?1:smooth((now-sceneAt)/1600);
+ ctx.save();ctx.globalAlpha=fade;
+ ctx.translate(W/2,H/2);ctx.scale(cowZoom,cowZoom);
+ ctx.drawImage(cowCanvas,-W/2,-H/2,W,H);
+ ctx.restore();
 }
-function drawBackdrop(now){
-if(scene===4){
-ctx.save();
-for(let i=0;i<45;i++){
-let x=(i*149.5+Math.sin(now*.00023+i)*38)%W;
-let y=((i*131.3-now*.013*(1+i%3))%H+H)%H;
-ctx.globalAlpha=.13+.23*(.5+.5*Math.sin(now*.001+i));
-ctx.fillStyle=i%3?"#ffd5e8":"#fff6e8";ctx.font=(9+i%8)+"px serif";ctx.fillText(i%3?"♡":"✦",x,y);
+function drawFinal(now){
+ ctx.save();
+ for(let i=0;i<45;i++){
+  let x=(i*149.5+Math.sin(now*.00023+i)*38)%W;
+  let y=((i*131.3-now*.013*(1+i%3))%H+H)%H;
+  ctx.globalAlpha=.13+.23*(.5+.5*Math.sin(now*.001+i));
+  ctx.fillStyle=i%3?"#ffd5e8":"#fff6e8";
+  ctx.font=(9+i%8)+"px serif";
+  ctx.fillText(i%3?"♡":"✦",x,y);
+ }
+ ctx.restore();
 }
-ctx.restore();
+function draw(now){
+ ctx.clearRect(0,0,W,H);
+ if(scene===1||scene===2)drawTypography(now);
+ if(scene===3)drawCow(now);
+ if(scene===4)drawFinal(now);
+ requestAnimationFrame(draw);
 }
+function size(){
+ W=Math.max(1,innerWidth);H=Math.max(1,innerHeight);DPR=Math.min(devicePixelRatio||1,2);
+ canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
+ ctx.setTransform(DPR,0,0,DPR,0,0);
+ rebuildWords();
+ if(cowImage&&cowImage.complete&&cowImage.naturalWidth)renderCow();
 }
-function animate(now){
-ctx.clearRect(0,0,W,H);
-if(scene===1||scene===2)renderParticles(now);
-if(scene===3)drawCow(now);
-if(scene===4)drawBackdrop(now);
-requestAnimationFrame(animate);
+function goto(next,auto=true){
+ clearTimeout(nextTimer);
+ scene=clamp(next,0,4);sceneAt=performance.now();
+ $("intro").classList.toggle("active",scene===0);
+ $("final").classList.toggle("active",scene===4);
+ $("nav").classList.toggle("active",scene!==0);
+ $("zoom").classList.toggle("active",scene===3);
+ $("chapter").textContent=["A little something for you","01 / In every language","02 / One heart","03 / In every little thing","04 / Eleven months"][scene];
+ dots.forEach((d,i)=>d.classList.toggle("on",i===scene-1));
+ $("back").disabled=scene===0;
+ $("next").textContent=scene===4?"↻ Replay":"Next →";
+ $("error").style.display=scene===3&&!cowReady?"block":"none";
+ if(scene===3&&!cowReady)$("error").textContent="Preparing the little cow surprise…";
+ ["trinCaption","heartCaption","cowCaption"].forEach((id,i)=>$(id).classList.toggle("visible",scene===i+1));
+ if(auto&&timings[scene]&&!reduce)nextTimer=setTimeout(()=>goto(scene+1),timings[scene]);
 }
-function zoom(diff){cowZoom=clamp(+(cowZoom+diff).toFixed(2),.75,4)}
+function zoom(by){cowZoom=clamp(+(cowZoom+by).toFixed(2),.75,4)}
 $("start").addEventListener("click",()=>goto(1));
 $("replay").addEventListener("click",()=>{cowZoom=1;goto(1)});
 $("back").addEventListener("click",()=>goto(scene-1));
 $("next").addEventListener("click",()=>goto(scene===4?1:scene+1));
-$("zoomin").addEventListener("click",()=>zoom(.35));$("zoomout").addEventListener("click",()=>zoom(-.35));
+$("zoomin").addEventListener("click",()=>zoom(.35));
+$("zoomout").addEventListener("click",()=>zoom(-.35));
 canvas.addEventListener("wheel",e=>{if(scene!==3)return;e.preventDefault();zoom(e.deltaY<0?.18:-.18)},{passive:false});
 addEventListener("keydown",e=>{if(scene===0)return;if(e.key==="ArrowLeft")goto(scene-1);if(e.key==="ArrowRight")goto(scene===4?1:scene+1)});
-let resizeTimer;addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(size,220)});
-size();requestAnimationFrame(animate);
-cowImage=new Image();
-cowImage.onload=()=>renderCow();
-cowImage.onerror=()=>{cowReady=false;if(scene===3){$("error").textContent="Cow image couldn't load. Make sure cow.jpg is in the repo root."; $("error").style.display="block"}};
+addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(size,200)});
+size();requestAnimationFrame(draw);
+cowImage=new Image();cowImage.onload=renderCow;
+cowImage.onerror=()=>{cowReady=false;if(scene===3){$("error").textContent="Couldn't load cow.jpg from the repository."; $("error").style.display="block"}};
 cowImage.src="./cow.jpg";
 })();
 </script>
