@@ -31,7 +31,12 @@ header{position:absolute;z-index:5;top:0;left:0;right:0;padding:clamp(20px,3.5vw
 .caption.visible{opacity:1;visibility:visible}
 .caption small{display:block;margin-top:13px;font:500 10px "DM Sans",sans-serif;letter-spacing:.21em;text-transform:uppercase;color:#ffdfeb}
 #final{background:radial-gradient(ellipse at 50% 45%,#66294152,transparent 60%)}
-#final .hero{font-size:clamp(53px,9.5vw,132px)}
+#final .hero{
+ font-family:"DM Sans",Arial,sans-serif;font-size:clamp(34px,6.2vw,92px);
+ font-weight:800;letter-spacing:-.055em;line-height:1.16;
+ max-width:min(1100px,94vw);text-wrap:balance;
+ color:#ffe4ed;text-shadow:0 0 35px #f47da459;
+}
 #final .subtitle{max-width:530px}
 #final .message{max-width:430px;margin-top:24px;font-size:clamp(12px,1.3vw,15px);line-height:1.85;color:#e9bfd0}
 .beating{font-size:34px;color:#ffbad0;filter:drop-shadow(0 0 19px #f57ba6);animation:beat 2s infinite}
@@ -52,7 +57,20 @@ nav.active{opacity:1;visibility:visible}
 #zoom button{padding:10px 13px;border-radius:25px;border:1px solid #ffe0e65c;background:#160e18b8;color:#fff5f8;font-size:13px;backdrop-filter:blur(12px)}
 #error{position:absolute;z-index:8;bottom:86px;width:100%;padding:0 25px;text-align:center;color:#ffdee8;font-size:12px;display:none}
 #prefers{position:absolute;z-index:6;top:90px;left:clamp(20px,3.5vw,42px);border:0;color:#ffe4ee;background:transparent;font-size:11px;opacity:.7;cursor:pointer}
-@media(max-width:500px){.hero{font-size:clamp(66px,19vw,92px)}.chapter{letter-spacing:.15em;font-size:9px}.caption{bottom:130px}.kicker{font-size:10px}.primary{margin-top:31px}}
+@media(max-width:600px){
+ .hero{font-size:clamp(64px,16vw,100px)}
+ #intro .hero{margin-bottom:6px}
+ #final .hero{font-size:clamp(32px,8.7vw,58px);line-height:1.25;max-width:94vw;letter-spacing:-.045em}
+ .chapter{letter-spacing:.10em;font-size:9px}
+ .primary{margin-top:28px;min-height:48px;font-size:13px;padding:14px 26px}
+ nav{padding:12px 16px max(18px,env(safe-area-inset-bottom))}
+ .nav-btn{min-height:44px;min-width:80px;padding:10px 12px}
+ .caption{bottom:108px}
+ #zoom{top:77px;right:15px}
+ #zoom button{min-width:44px;min-height:44px}
+ header{padding:18px 16px}
+}
+@media(max-height:650px){#final .hero{font-size:clamp(29px,7vh,58px)}#final .primary{margin-top:15px}}
 @media(prefers-reduced-motion:reduce){.spark,#app:before,.beating{animation:none!important}.view,.caption{transition-duration:.1s!important}}
 </style>
 </head>
@@ -60,22 +78,19 @@ nav.active{opacity:1;visibility:visible}
 <main id="app">
 <canvas id="canvas" aria-label="Animated words of love morphing into shapes and a cow portrait"></canvas>
 <div class="grain"></div><div id="sparkles" class="sparkles" aria-hidden="true"></div>
-<header><span class="brand">B ♡ T</span><span id="chapter" class="chapter">A little something for you</span></header>
+<header><span class="brand">B ♡ T</span><span id="chapter" class="chapter"></span></header>
 <section id="intro" class="view active" aria-label="Welcome">
-<div class="kicker">A LITTLE LOVE LETTER</div>
+<div class="kicker">JUST FOR YOU</div>
 <h1 class="hero">For <em>Trin.</em></h1>
-<p class="subtitle">There are a thousand ways to say it.<br>And somehow, none of them feel like enough.</p>
-<button id="start" class="primary">Made with all my love <span aria-hidden="true">↗</span></button>
+
+<button id="start" class="primary">Start <span aria-hidden="true">♡</span></button>
 </section>
-<div id="trinCaption" class="caption">In every language, it's always you.</div>
-<div id="heartCaption" class="caption">Every little word. Every beat. All yours.</div>
-<div id="cowCaption" class="caption">Even the little things remind me of you.<small>Look closer — it's all “I love you” ♡</small></div>
+<div id="trinCaption" class="caption"></div>
+<div id="heartCaption" class="caption"></div>
+<div id="cowCaption" class="caption"></div>
 <section id="final" class="view" aria-label="Anniversary message">
-<div class="beating" aria-hidden="true">♥</div><div class="kicker" style="margin-top:22px">TO MY FAVORITE PERSON</div>
-<h2 class="hero">Happy <em>11</em><br>Months, Trin.</h2>
-<p class="subtitle">Eleven months down, forever to go.</p>
-<p class="message">No matter how many languages there are in the world, my favorite three words will always be <strong>I love you.</strong><br>And I'd choose you in every lifetime. ♡</p>
-<button id="replay" class="primary">Watch it all again <span aria-hidden="true">↻</span></button>
+<h2 class="hero">HAPPY 11 MONTHS<br>BEBE I LOVE YOU!!!</h2>
+<button id="replay" class="primary">Replay ↻</button>
 </section>
 <div id="zoom"><button id="zoomout" aria-label="Zoom out">−</button><button id="zoomin" aria-label="Zoom in">＋</button></div>
 <div id="error" role="status"></div>
@@ -194,6 +209,7 @@ function makeLayout(kind){
 function rebuildWords(){
  const first=makeLayout("trin"),second=makeLayout("heart");
  const count=Math.max(first.length,second.length);
+ if(!count){nodes=[];return}
  // Interpolate matching typography units, revealing extras instead of overlapping them.
  nodes=Array.from({length:count},(_,i)=>{
   const fi=Math.floor(i*first.length/count),ti=Math.floor(i*second.length/count);
@@ -213,37 +229,59 @@ function rebuildWords(){
  };
  assign(first,"from");assign(second,"to");
 }
+function drawFlippedPhrase(text,x,y,font,color,opacity,flip){
+ if(opacity<=.01)return;
+ ctx.save();ctx.translate(x,y);
+ // A 3D-style card flip: shrink the horizontal projection from edge-on to full width.
+ // Small vertical overshoot makes each word feel like it is turning into place.
+ const eased=smooth(flip);
+ const angle=(1-eased)*Math.PI/2;
+ const width=Math.max(.008,Math.cos(angle));
+ ctx.scale(width,1+.075*Math.sin(angle));
+ ctx.globalAlpha=opacity*eased;
+ ctx.textAlign="center";ctx.textBaseline="middle";
+ ctx.font="700 "+font.toFixed(1)+"px Arial, sans-serif";
+ ctx.fillStyle=color;ctx.shadowColor="#ff7b87";ctx.shadowBlur=4;
+ ctx.fillText(text,0,0);
+ ctx.restore();
+}
 function drawTypography(now){
  const elapsed=now-sceneAt;
- const morph=scene===2?(reduce?1:smooth((elapsed-250)/3300)):0;
- ctx.save();ctx.textAlign="center";ctx.textBaseline="middle";
+ const morph=scene===2?(reduce?1:smooth((elapsed-240)/3400)):0;
  for(const n of nodes){
   const a=n.from,b=n.to;
-  const arrive=reduce?1:smooth((elapsed-70-n.delay*2100)/2100);
-  const xBase=lerp(a.x,b.x,morph),yBase=lerp(a.y,b.y,morph);
-  let x=xBase,y=yBase,opacity=1,fs=lerp(a.font,b.font,morph);
+  if(!a||!b)continue;
   if(scene===1){
-   x=lerp(a.x+n.offx,a.x,arrive);
-   y=lerp(a.y+n.offy,a.y,arrive);
-   opacity=arrive*(n.showFrom?1:0);
+   if(!n.showFrom)continue;
+   // Each phrase independently flips in exactly where it belongs.
+   const flip=reduce?1:smooth((elapsed-160-n.delay*3050)/920);
+   drawFlippedPhrase(a.text,a.x,a.y,a.font,a.color,.98,flip);
   }else{
-   const appearFrom=n.showFrom?1:smooth((morph-.24)/.4);
-   const appearTo=n.showTo?1:1-smooth((morph-.50)/.4);
-   opacity=appearFrom*appearTo;
-   const pulse=1+Math.sin(now/370)*.012*morph;
-   x=W*.5+(x-W*.5)*pulse;y=H*.44+(y-H*.44)*pulse;
+   // The existing TRIN letters flow to heart positions.
+   const x=lerp(a.x,b.x,morph);
+   const y=lerp(a.y,b.y,morph);
+   const font=lerp(a.font,b.font,morph);
+   const pulse=1+Math.sin(now/365)*.012*morph;
+   const px=W*.5+(x-W*.5)*pulse;
+   const py=H*.44+(y-H*.44)*pulse;
+   // Half-turn swaps the language phrase without a visible hard cut.
+   const turn=reduce?1:smooth((elapsed-400-n.delay*1250)/1900);
+   const edge=Math.abs(Math.cos(turn*Math.PI));
+   const text=turn<.5?a.text:b.text;
+   const color=turn<.5?a.color:b.color;
+   // Honor only unique word positions to avoid stacking phrases.
+   const visibility=turn<.5?n.showFrom:n.showTo;
+   if(!visibility)continue;
+   ctx.save();ctx.translate(px,py);
+   ctx.scale(Math.max(.006,edge),1+.09*Math.sin(turn*Math.PI));
+   ctx.globalAlpha=.97;
+   ctx.textAlign="center";ctx.textBaseline="middle";
+   ctx.font="700 "+font.toFixed(1)+"px Arial, sans-serif";
+   ctx.fillStyle=color;ctx.shadowColor="#ff7b87";ctx.shadowBlur=4;
+   ctx.fillText(text,0,0);
+   ctx.restore();
   }
-  if(opacity<.01)continue;
-  ctx.globalAlpha=opacity*.96;
-  ctx.fillStyle=scene===2&&morph>.5?b.color:a.color;
-  ctx.shadowColor="#ff7b87";ctx.shadowBlur=5;
-  ctx.font="700 "+fs.toFixed(1)+"px Arial, sans-serif";
-  // Preserve the original phrase through the morph, then switch to target phrase
-  // while the units are moving, not as a hard scene cut.
-  if(scene===2&&morph>.50)ctx.fillText(b.text,x,y);
-  else ctx.fillText(a.text,x,y);
  }
- ctx.restore();
 }
 function renderCow(){
  if(!cowImage||!cowImage.naturalWidth)return;
@@ -255,6 +293,16 @@ function renderCow(){
  const sw=cowImage.naturalWidth*f,sh=cowImage.naturalHeight*f;
  // The original photo is drawn ONLY onto a temporary, invisible sample canvas.
  s.drawImage(cowImage,(cw-sw)/2,(ch-sh)/2,sw,sh);
+ if(H>W*1.14){
+  // Portrait phones get the entire cow photograph in a central text-portrait
+  // panel while background pixels still supply colors for every text character.
+  const containScale=Math.min(cw/cowImage.naturalWidth,ch*.78/cowImage.naturalHeight);
+  const iw=cowImage.naturalWidth*containScale;
+  const ih=cowImage.naturalHeight*containScale;
+  s.fillStyle="#181019aa";
+  s.fillRect(0,(ch-ih)/2-13,cw,ih+26);
+  s.drawImage(cowImage,(cw-iw)/2,(ch-ih)/2,iw,ih);
+ }
  const pixels=s.getImageData(0,0,cw,ch).data;
  const output=document.createElement("canvas");output.width=cw;output.height=ch;
  const c=output.getContext("2d");
@@ -326,13 +374,13 @@ function goto(next,auto=true){
  $("final").classList.toggle("active",scene===4);
  $("nav").classList.toggle("active",scene!==0);
  $("zoom").classList.toggle("active",scene===3);
- $("chapter").textContent=["A little something for you","01 / In every language","02 / One heart","03 / In every little thing","04 / Eleven months"][scene];
+ $("chapter").textContent=["","01 / TRIN","02 / HEART","03 / COW","04 / 11 MONTHS"][scene];
  dots.forEach((d,i)=>d.classList.toggle("on",i===scene-1));
  $("back").disabled=scene===0;
  $("next").textContent=scene===4?"↻ Replay":"Next →";
  $("error").style.display=scene===3&&!cowReady?"block":"none";
  if(scene===3&&!cowReady)$("error").textContent="Preparing the little cow surprise…";
- ["trinCaption","heartCaption","cowCaption"].forEach((id,i)=>$(id).classList.toggle("visible",scene===i+1));
+ ["trinCaption","heartCaption","cowCaption"].forEach(id=>$(id).classList.remove("visible"));
  if(auto&&timings[scene]&&!reduce)nextTimer=setTimeout(()=>goto(scene+1),timings[scene]);
 }
 function zoom(by){cowZoom=clamp(+(cowZoom+by).toFixed(2),.75,4)}
