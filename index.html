@@ -118,7 +118,7 @@ const languages=[
 const palette=["#ffb7af","#ffaba6","#ff9b9b","#ffb9ba","#ffc3c8","#f59da8","#ffd1cf"];
 const timings=[0,8200,7500,10000,0];
 let W=innerWidth,H=innerHeight,DPR=1,scene=0,sceneAt=performance.now();
-let nodes=[],cowImage=null,cowCanvas=null,cowReady=false,cowZoom=1,nextTimer=null,resizeTimer=null;
+let nodes=[],cowImage=null,cowCanvas=null,cowReady=false,cowZoom=1,nextTimer=null,resizeTimer=null,completed=false;
 for(let i=0;i<54;i++){
  const s=document.createElement("i");s.className="spark";
  s.style.setProperty("--x",Math.random()*100+"%");
@@ -206,8 +206,118 @@ function makeLayout(kind){
  }
  return placements.sort((a,b)=>a.y-b.y||a.x-b.x);
 }
+// Mobile needs different typography rules: the thick letter strokes are only
+// ~20-60px wide, so forcing an entire translation inside each pixel run
+// favored only the shortest (often Arabic) phrases.
+function mobileLayout(kind){
+ const pixels=buildMask(kind);
+ const inside=(x,y)=>{
+  x=Math.round(x);y=Math.round(y);
+  return x>=0&&y>=0&&x<W&&y<H&&pixels[(y*W+x)*4+3]>125;
+ };
+ // A deliberately balanced list: rotating the starting translation for each
+ // position ensures the result isn't dominated by whichever phrase is shortest.
+ const mini=[
+  "I love you","Je t'aime","Te amo","Ti amo","Eu te amo",
+  "愛してる","사랑해","我爱你","Mahal kita","Σ' αγαπώ",
+  "Nakupenda","Volim te","Kocham cię","Te iubesc","أحبك",
+  "Szeretlek","Miluji tě","Aku cinta kamu","Ik hou van jou",
+  "Seni seviyorum","Jag älskar dig","Ich liebe dich"
+ ];
+ const choose=(target,row,col,maxWidth,base)=>{
+  // First try the preferred language, shrinking its type as needed.
+  // If it's genuinely too long, try the NEXT languages in the rotation.
+  for(let pass=0;pass<mini.length;pass++){
+   const word=mini[(target+pass)%mini.length];
+   for(const f of [base,base*.91,base*.82,base*.74,base*.67]){
+    m.font="700 "+f+"px Arial, sans-serif";
+    const width=m.measureText(word).width;
+    if(width<=maxWidth){
+     return {text:word,font:f,width,
+       color:palette[(row+col+target)%palette.length]};
+    }
+   }
+  }
+  return null;
+ };
+ const result=[];
+ if(kind==="trin"){
+  // Resolve the four character columns separately so a translated phrase can
+  // be CENTERED on a narrow stroke instead of getting rejected by its width.
+  let f=Math.min(H*.49,W*.265);
+  m.font="900 "+f+"px Arial Black, Arial, sans-serif";
+  while(m.measureText("TRIN").width>W*.87&&f>28){
+   f-=3;m.font="900 "+f+"px Arial Black, Arial, sans-serif";
+  }
+  const widths=[..."TRIN"].map(letter=>m.measureText(letter).width);
+  const full=m.measureText("TRIN").width;
+  let cursor=W*.5-full*.5;
+  const columns=widths.map(width=>{
+   const column={left:cursor,right:cursor+width,center:cursor+width*.5};
+   cursor+=width;return column;
+  });
+  const rows=12,step=f*.095;
+  for(let row=0;row<rows;row++){
+   const y=H*.448+(row-(rows-1)/2)*step;
+   for(let col=0;col<4;col++){
+    const column=columns[col];
+    // Find the stroke nearest the middle of this character.
+    const candidates=[];
+    for(let x=Math.floor(column.left);x<column.right;x+=2)
+     if(inside(x,y))candidates.push(x);
+    if(!candidates.length)continue;
+    let x=candidates[Math.floor(candidates.length/2)];
+    // Allocate phrase width by center-to-center spacing, not letter-stroke
+    // thickness. This permits words in the I and the T vertical stems.
+    const leftBound=col===0?W*.035:(columns[col-1].center+column.center)/2;
+    const rightBound=col===3?W*.965:(column.center+columns[col+1].center)/2;
+    const maxWidth=Math.max(26,(rightBound-leftBound)-3);
+    const desired=(row*4+col*5)%mini.length;
+    const item=choose(desired,row,col,maxWidth,clamp(W/39,8.8,11.2));
+    if(!item)continue;
+    x=clamp(x,leftBound+item.width/2,rightBound-item.width/2);
+    result.push({...item,x,y});
+   }
+  }
+ }else{
+  // Pack multiple readable phrases into each heart row, and keep both lobes
+  // separate where the heart silhouette splits at the top.
+  const base=clamp(W/36,9.5,12.5);
+  const rowHeight=base*1.34;
+  let number=0;
+  for(let y=H*.13,row=0;y<H*.78;y+=rowHeight,row++){
+   const runs=[];let a=-1;
+   for(let x=Math.floor(W*.05);x<=Math.ceil(W*.95);x+=2){
+    if(inside(x,y)){if(a<0)a=x}
+    else if(a>=0){if(x-a>12)runs.push([a,x]);a=-1}
+   }
+   if(a>=0)runs.push([a,W*.95]);
+   for(const [l,r] of runs){
+    const left=l+3,right=r-3,length=right-left;
+    if(length<16)continue;
+    // Narrow tips should get one centered phrase instead of staying empty.
+    if(length<45){
+     const item=choose((number*3+row*2)%mini.length,row,number,length+20,base*.76);
+     if(item)result.push({...item,x:(l+r)/2,y});
+     number++;continue;
+    }
+    let pos=left;
+    while(pos<right-20){
+     const remaining=right-pos;
+     const item=choose((number*7+row*3)%mini.length,row,number,remaining,base);
+     if(!item)break;
+     result.push({...item,x:pos+item.width*.5,y});
+     pos+=item.width+Math.max(5,base*.48);
+     number++;
+    }
+   }
+  }
+ }
+ return result;
+}
 function rebuildWords(){
- const first=makeLayout("trin"),second=makeLayout("heart");
+ const first=W<=620?mobileLayout("trin"):makeLayout("trin");
+ const second=W<=620?mobileLayout("heart"):makeLayout("heart");
  const count=Math.max(first.length,second.length);
  if(!count){nodes=[];return}
  // Interpolate matching typography units, revealing extras instead of overlapping them.
@@ -370,6 +480,7 @@ function size(){
 function goto(next,auto=true){
  clearTimeout(nextTimer);
  scene=clamp(next,0,4);sceneAt=performance.now();
+ if(scene===4)completed=true;
  $("intro").classList.toggle("active",scene===0);
  $("final").classList.toggle("active",scene===4);
  $("nav").classList.toggle("active",scene!==0);
@@ -378,6 +489,9 @@ function goto(next,auto=true){
  dots.forEach((d,i)=>d.classList.toggle("on",i===scene-1));
  $("back").disabled=scene===0;
  $("next").textContent=scene===4?"↻ Replay":"Next →";
+ // Until the full automatic show finishes, do not offer a skip button.
+ $("next").style.visibility=completed?"visible":"hidden";
+ $("next").disabled=!completed;
  $("error").style.display=scene===3&&!cowReady?"block":"none";
  if(scene===3&&!cowReady)$("error").textContent="Preparing the little cow surprise…";
  ["trinCaption","heartCaption","cowCaption"].forEach(id=>$(id).classList.remove("visible"));
@@ -385,13 +499,13 @@ function goto(next,auto=true){
 }
 function zoom(by){cowZoom=clamp(+(cowZoom+by).toFixed(2),.75,4)}
 $("start").addEventListener("click",()=>goto(1));
-$("replay").addEventListener("click",()=>{cowZoom=1;goto(1)});
+$("replay").addEventListener("click",()=>{cowZoom=1;completed=false;goto(1)});
 $("back").addEventListener("click",()=>goto(scene-1));
-$("next").addEventListener("click",()=>goto(scene===4?1:scene+1));
+$("next").addEventListener("click",()=>{if(completed)goto(scene===4?1:scene+1)});
 $("zoomin").addEventListener("click",()=>zoom(.35));
 $("zoomout").addEventListener("click",()=>zoom(-.35));
 canvas.addEventListener("wheel",e=>{if(scene!==3)return;e.preventDefault();zoom(e.deltaY<0?.18:-.18)},{passive:false});
-addEventListener("keydown",e=>{if(scene===0)return;if(e.key==="ArrowLeft")goto(scene-1);if(e.key==="ArrowRight")goto(scene===4?1:scene+1)});
+addEventListener("keydown",e=>{if(scene===0)return;if(e.key==="ArrowLeft")goto(scene-1);if(e.key==="ArrowRight"&&completed)goto(scene===4?1:scene+1)});
 addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(size,200)});
 size();requestAnimationFrame(draw);
 cowImage=new Image();cowImage.onload=renderCow;
