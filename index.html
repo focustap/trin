@@ -206,118 +206,134 @@ function makeLayout(kind){
  }
  return placements.sort((a,b)=>a.y-b.y||a.x-b.x);
 }
-// Mobile needs different typography rules: the thick letter strokes are only
-// ~20-60px wide, so forcing an entire translation inside each pixel run
-// favored only the shortest (often Arabic) phrases.
-function mobileLayout(kind){
- const pixels=buildMask(kind);
- const inside=(x,y)=>{
-  x=Math.round(x);y=Math.round(y);
-  return x>=0&&y>=0&&x<W&&y<H&&pixels[(y*W+x)*4+3]>125;
- };
- // A deliberately balanced list: rotating the starting translation for each
- // position ensures the result isn't dominated by whichever phrase is shortest.
- const mini=[
-  "I love you","Je t'aime","Te amo","Ti amo","Eu te amo",
-  "愛してる","사랑해","我爱你","Mahal kita","Σ' αγαπώ",
-  "Nakupenda","Volim te","Kocham cię","Te iubesc","أحبك",
-  "Szeretlek","Miluji tě","Aku cinta kamu","Ik hou van jou",
-  "Seni seviyorum","Jag älskar dig","Ich liebe dich"
- ];
- const choose=(target,row,col,maxWidth,base)=>{
-  // First try the preferred language, shrinking its type as needed.
-  // If it's genuinely too long, try the NEXT languages in the rotation.
-  for(let pass=0;pass<mini.length;pass++){
-   const word=mini[(target+pass)%mini.length];
-   for(const f of [base,base*.91,base*.82,base*.74,base*.67]){
-    m.font="700 "+f+"px Arial, sans-serif";
-    const width=m.measureText(word).width;
-    if(width<=maxWidth){
-     return {text:word,font:f,width,
-       color:palette[(row+col+target)%palette.length]};
-    }
-   }
-  }
-  return null;
- };
- const result=[];
+// On narrow screens, whole translations don't fit inside an individual letter
+// stroke. Instead, draw legible phrases on a packed typographic surface and
+// clip that surface TO the true TRIN silhouette (and then to a heart).
+// The photograph and the mask images themselves are never rendered as text art.
+let mobileTitleMask=null,mobileHeartMask=null,mobileCompositeMask=null;
+let mobileMaskCtx=null,mobileWordsCanvas=null,mobileWordsCtx=null,mobilePhrases=[];
+function newCanvas(){
+ const c=document.createElement("canvas");c.width=W;c.height=H;return c;
+}
+function buildMobileMask(kind){
+ const c=newCanvas(),g=c.getContext("2d");
+ g.fillStyle="#ffffff";g.strokeStyle="#ffffff";
  if(kind==="trin"){
-  // Resolve the four character columns separately so a translated phrase can
-  // be CENTERED on a narrow stroke instead of getting rejected by its width.
-  let f=Math.min(H*.49,W*.265);
-  m.font="900 "+f+"px Arial Black, Arial, sans-serif";
-  while(m.measureText("TRIN").width>W*.87&&f>28){
-   f-=3;m.font="900 "+f+"px Arial Black, Arial, sans-serif";
-  }
-  const widths=[..."TRIN"].map(letter=>m.measureText(letter).width);
-  const full=m.measureText("TRIN").width;
-  let cursor=W*.5-full*.5;
-  const columns=widths.map(width=>{
-   const column={left:cursor,right:cursor+width,center:cursor+width*.5};
-   cursor+=width;return column;
-  });
-  const rows=12,step=f*.095;
-  for(let row=0;row<rows;row++){
-   const y=H*.448+(row-(rows-1)/2)*step;
-   for(let col=0;col<4;col++){
-    const column=columns[col];
-    // Find the stroke nearest the middle of this character.
-    const candidates=[];
-    for(let x=Math.floor(column.left);x<column.right;x+=2)
-     if(inside(x,y))candidates.push(x);
-    if(!candidates.length)continue;
-    let x=candidates[Math.floor(candidates.length/2)];
-    // Allocate phrase width by center-to-center spacing, not letter-stroke
-    // thickness. This permits words in the I and the T vertical stems.
-    const leftBound=col===0?W*.035:(columns[col-1].center+column.center)/2;
-    const rightBound=col===3?W*.965:(column.center+columns[col+1].center)/2;
-    const maxWidth=Math.max(26,(rightBound-leftBound)-3);
-    const desired=(row*4+col*5)%mini.length;
-    const item=choose(desired,row,col,maxWidth,clamp(W/39,8.8,11.2));
-    if(!item)continue;
-    x=clamp(x,leftBound+item.width/2,rightBound-item.width/2);
-    result.push({...item,x,y});
-   }
-  }
+  // Big, tall letterforms with generous stroke width. Horizontal compression
+  // fits all four letters without making them a short illegible word cloud.
+  const fontSize=Math.min(H*.255,245);
+  g.font="900 "+fontSize+"px Arial Black, Arial, sans-serif";
+  const naturalWidth=Math.max(1,g.measureText("TRIN").width);
+  const scaleX=Math.min(1.05,W*.91/naturalWidth);
+  g.save();
+  g.translate(W*.5,H*.455);
+  g.scale(scaleX,1);
+  g.textAlign="center";g.textBaseline="middle";
+  g.lineJoin="round";g.lineWidth=fontSize*.085;
+  g.strokeText("TRIN",0,0);
+  g.fillText("TRIN",0,0);
+  g.restore();
  }else{
-  // Pack multiple readable phrases into each heart row, and keep both lobes
-  // separate where the heart silhouette splits at the top.
-  const base=clamp(W/36,9.5,12.5);
-  const rowHeight=base*1.34;
-  let number=0;
-  for(let y=H*.13,row=0;y<H*.78;y+=rowHeight,row++){
-   const runs=[];let a=-1;
-   for(let x=Math.floor(W*.05);x<=Math.ceil(W*.95);x+=2){
-    if(inside(x,y)){if(a<0)a=x}
-    else if(a>=0){if(x-a>12)runs.push([a,x]);a=-1}
-   }
-   if(a>=0)runs.push([a,W*.95]);
-   for(const [l,r] of runs){
-    const left=l+3,right=r-3,length=right-left;
-    if(length<16)continue;
-    // Narrow tips should get one centered phrase instead of staying empty.
-    if(length<45){
-     const item=choose((number*3+row*2)%mini.length,row,number,length+20,base*.76);
-     if(item)result.push({...item,x:(l+r)/2,y});
-     number++;continue;
-    }
-    let pos=left;
-    while(pos<right-20){
-     const remaining=right-pos;
-     const item=choose((number*7+row*3)%mini.length,row,number,remaining,base);
-     if(!item)break;
-     result.push({...item,x:pos+item.width*.5,y});
-     pos+=item.width+Math.max(5,base*.48);
-     number++;
-    }
-   }
+  const scale=Math.min(W*.52,H*.32);
+  const cx=W*.5,cy=H*.448;
+  g.beginPath();
+  for(let t=0;t<=Math.PI*2+.02;t+=.018){
+   const x=16*Math.pow(Math.sin(t),3)/18*scale;
+   const y=-(13*Math.cos(t)-5*Math.cos(2*t)-2*Math.cos(3*t)-Math.cos(4*t))/18*scale;
+   if(t===0)g.moveTo(cx+x,cy+y);else g.lineTo(cx+x,cy+y);
+  }
+  g.closePath();g.fill();
+ }
+ return c;
+}
+function buildMobileWords(){
+ mobileTitleMask=buildMobileMask("trin");
+ mobileHeartMask=buildMobileMask("heart");
+ mobileCompositeMask=newCanvas();
+ mobileMaskCtx=mobileCompositeMask.getContext("2d");
+ mobileWordsCanvas=newCanvas();
+ mobileWordsCtx=mobileWordsCanvas.getContext("2d");
+ mobilePhrases=[];
+ // Enough translations in every row to outline the letters. Unlike the old
+ // placement algorithm, the phrase choice NEVER depends on how short it is.
+ const font=clamp(W/38,9.7,12.2);
+ const lineHeight=font*1.03;
+ const gap=font*.52;
+ const g=mobileWordsCtx;
+ g.font="700 "+font+"px Arial, sans-serif";
+ let row=0;
+ for(let y=H*.19;y<H*.74;y+=lineHeight,row++){
+  let x=-(row%3)*24-65,col=0;
+  while(x<W+70){
+   // Coprime stride through the phrase list, with a different row offset.
+   const idx=(row*11+col*7+Math.floor(row/6))%languages.length;
+   const word=languages[idx];
+   const width=Math.max(12,g.measureText(word).width);
+   const seed=(row*53+col*29)%101/101;
+   mobilePhrases.push({
+    text:word,x:x+width*.5,y,width,font,
+    color:palette[(row+col*3)%palette.length],
+    stagger:seed,drift:Math.sin(row*7.7+col*4.3)*9
+   });
+   x+=width+gap;col++;
   }
  }
- return result;
+}
+function drawMobileTypography(now){
+ if(!mobileWordsCanvas)return;
+ const elapsed=now-sceneAt;
+ const morph=scene===2?smooth((elapsed-200)/3400):0;
+ const g=mobileWordsCtx;
+ g.setTransform(1,0,0,1,0,0);
+ g.clearRect(0,0,W,H);
+ g.textAlign="center";g.textBaseline="middle";
+ for(const p of mobilePhrases){
+  let flip=1,opacity=.99,driftX=0,driftY=0;
+  if(scene===1){
+   // Every multilingual phrase turns from edge-on into a visible word.
+   flip=smooth((elapsed-130-p.stagger*2550)/800);
+   opacity=flip;
+  }else{
+   // The text itself drifts and half-flips as its silhouette flows to a heart.
+   const turn=smooth((elapsed-250-p.stagger*950)/1850);
+   flip=Math.max(.02,Math.abs(Math.cos(turn*Math.PI)));
+   driftX=p.drift*morph;
+   driftY=Math.sin(p.x*.055+p.y*.073)*10*morph;
+  }
+  if(opacity<.015)continue;
+  g.save();
+  g.translate(p.x+driftX,p.y+driftY);
+  g.scale(Math.max(.008,flip),1);
+  g.globalAlpha=opacity;
+  g.fillStyle=p.color;
+  g.font="700 "+p.font+"px Arial, sans-serif";
+  g.fillText(p.text,0,0);
+  g.restore();
+ }
+ // Blend two shaped alpha masks. The colored content remains actual text,
+ // never a plain TRIN glyph or flat heart illustration.
+ const mg=mobileMaskCtx;
+ mg.setTransform(1,0,0,1,0,0);
+ mg.clearRect(0,0,W,H);
+ if(scene===1 || morph<=0){
+  mg.drawImage(mobileTitleMask,0,0);
+ }else if(morph>=1){
+  mg.drawImage(mobileHeartMask,0,0);
+ }else{
+  mg.globalAlpha=1-morph;
+  mg.drawImage(mobileTitleMask,0,0);
+  mg.globalAlpha=morph;
+  mg.drawImage(mobileHeartMask,0,0);
+  mg.globalAlpha=1;
+ }
+ g.globalCompositeOperation="destination-in";
+ g.drawImage(mobileCompositeMask,0,0);
+ g.globalCompositeOperation="source-over";
+ ctx.drawImage(mobileWordsCanvas,0,0);
 }
 function rebuildWords(){
- const first=W<=620?mobileLayout("trin"):makeLayout("trin");
- const second=W<=620?mobileLayout("heart"):makeLayout("heart");
+ const first=makeLayout("trin");
+ const second=makeLayout("heart");
  const count=Math.max(first.length,second.length);
  if(!count){nodes=[];return}
  // Interpolate matching typography units, revealing extras instead of overlapping them.
@@ -465,7 +481,7 @@ function drawFinal(now){
 }
 function draw(now){
  ctx.clearRect(0,0,W,H);
- if(scene===1||scene===2)drawTypography(now);
+ if(scene===1||scene===2){if(W<=620)drawMobileTypography(now);else drawTypography(now)}
  if(scene===3)drawCow(now);
  if(scene===4)drawFinal(now);
  requestAnimationFrame(draw);
@@ -474,7 +490,7 @@ function size(){
  W=Math.max(1,innerWidth);H=Math.max(1,innerHeight);DPR=Math.min(devicePixelRatio||1,2);
  canvas.width=Math.round(W*DPR);canvas.height=Math.round(H*DPR);
  ctx.setTransform(DPR,0,0,DPR,0,0);
- rebuildWords();
+ if(W<=620)buildMobileWords();else rebuildWords();
  if(cowImage&&cowImage.complete&&cowImage.naturalWidth)renderCow();
 }
 function goto(next,auto=true){
