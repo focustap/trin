@@ -71,7 +71,7 @@ nav.active{opacity:1;visibility:visible}
  header{padding:18px 16px}
 }
 @media(max-height:650px){#final .hero{font-size:clamp(29px,7vh,58px)}#final .primary{margin-top:15px}}
-@media(prefers-reduced-motion:reduce){.spark,#app:before,.beating{animation:none!important}.view,.caption{transition-duration:.1s!important}}
+@media(prefers-reduced-motion:reduce){.spark,#app:before{animation:none!important}}
 </style>
 </head>
 <body>
@@ -103,7 +103,7 @@ nav.active{opacity:1;visibility:visible}
 "use strict";
 const $=id=>document.getElementById(id);
 const canvas=$("canvas"),ctx=canvas.getContext("2d",{alpha:true});
-const reduce=matchMedia("(prefers-reduced-motion: reduce)").matches;
+// This is an explicitly animated anniversary experience: always animate the text.
 const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 const lerp=(a,b,t)=>a+(b-a)*t;
 const smooth=t=>{t=clamp(t,0,1);return t*t*(3-2*t)};
@@ -357,14 +357,14 @@ function drawFlippedPhrase(text,x,y,font,color,opacity,flip){
 }
 function drawTypography(now){
  const elapsed=now-sceneAt;
- const morph=scene===2?(reduce?1:smooth((elapsed-240)/3400)):0;
+ const morph=scene===2?smooth((elapsed-240)/3300):0;
  for(const n of nodes){
   const a=n.from,b=n.to;
   if(!a||!b)continue;
   if(scene===1){
    if(!n.showFrom)continue;
    // Each phrase independently flips in exactly where it belongs.
-   const flip=reduce?1:smooth((elapsed-160-n.delay*3050)/920);
+   const flip=smooth((elapsed-160-n.delay*2850)/960);
    drawFlippedPhrase(a.text,a.x,a.y,a.font,a.color,.98,flip);
   }else{
    // The existing TRIN letters flow to heart positions.
@@ -375,7 +375,7 @@ function drawTypography(now){
    const px=W*.5+(x-W*.5)*pulse;
    const py=H*.44+(y-H*.44)*pulse;
    // Half-turn swaps the language phrase without a visible hard cut.
-   const turn=reduce?1:smooth((elapsed-400-n.delay*1250)/1900);
+   const turn=smooth((elapsed-400-n.delay*1250)/1900);
    const edge=Math.abs(Math.cos(turn*Math.PI));
    const text=turn<.5?a.text:b.text;
    const color=turn<.5?a.color:b.color;
@@ -445,7 +445,7 @@ function renderCow(){
 }
 function drawCow(now){
  if(!cowCanvas)return;
- const fade=reduce?1:smooth((now-sceneAt)/1600);
+ const fade=smooth((now-sceneAt)/1600);
  ctx.save();ctx.globalAlpha=fade;
  ctx.translate(W/2,H/2);ctx.scale(cowZoom,cowZoom);
  ctx.drawImage(cowCanvas,-W/2,-H/2,W,H);
@@ -495,7 +495,7 @@ function goto(next,auto=true){
  $("error").style.display=scene===3&&!cowReady?"block":"none";
  if(scene===3&&!cowReady)$("error").textContent="Preparing the little cow surprise…";
  ["trinCaption","heartCaption","cowCaption"].forEach(id=>$(id).classList.remove("visible"));
- // Reduced-motion preferences skip the flips, never the storyline.
+ // The cinematic sequence animates consistently on mobile and desktop.
  // A first watch advances automatically; returning to scenes after completion is manual.
  if(auto&&!completed&&timings[scene]){
   nextTimer=setTimeout(()=>goto(scene+1,true),timings[scene]);
