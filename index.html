@@ -116,7 +116,7 @@ const languages=[
 "أحبك","Szeretlek","Miluji tě","Nakupenda"
 ];
 const palette=["#ffb7af","#ffaba6","#ff9b9b","#ffb9ba","#ffc3c8","#f59da8","#ffd1cf"];
-const timings=[0,8200,7500,10000,0];
+const timings=[0,5000,5000,5000,0];
 let W=innerWidth,H=innerHeight,DPR=1,scene=0,sceneAt=performance.now();
 let nodes=[],cowImage=null,cowCanvas=null,cowReady=false,cowZoom=1,nextTimer=null,resizeTimer=null,completed=false;
 for(let i=0;i<54;i++){
@@ -495,17 +495,27 @@ function goto(next,auto=true){
  $("error").style.display=scene===3&&!cowReady?"block":"none";
  if(scene===3&&!cowReady)$("error").textContent="Preparing the little cow surprise…";
  ["trinCaption","heartCaption","cowCaption"].forEach(id=>$(id).classList.remove("visible"));
- if(auto&&timings[scene]&&!reduce)nextTimer=setTimeout(()=>goto(scene+1),timings[scene]);
+ // Reduced-motion preferences skip the flips, never the storyline.
+ // A first watch advances automatically; returning to scenes after completion is manual.
+ if(auto&&!completed&&timings[scene]){
+  nextTimer=setTimeout(()=>goto(scene+1,true),timings[scene]);
+ }
+}
+function beginShow(){
+ clearTimeout(nextTimer);
+ completed=false;
+ cowZoom=1;
+ goto(1,true);
 }
 function zoom(by){cowZoom=clamp(+(cowZoom+by).toFixed(2),.75,4)}
-$("start").addEventListener("click",()=>goto(1));
-$("replay").addEventListener("click",()=>{cowZoom=1;completed=false;goto(1)});
-$("back").addEventListener("click",()=>goto(scene-1));
-$("next").addEventListener("click",()=>{if(completed)goto(scene===4?1:scene+1)});
+$("start").addEventListener("click",beginShow);
+$("replay").addEventListener("click",beginShow);
+$("back").addEventListener("click",()=>goto(scene-1,false));
+$("next").addEventListener("click",()=>{if(!completed)return;if(scene===4)beginShow();else goto(scene+1,false)});
 $("zoomin").addEventListener("click",()=>zoom(.35));
 $("zoomout").addEventListener("click",()=>zoom(-.35));
 canvas.addEventListener("wheel",e=>{if(scene!==3)return;e.preventDefault();zoom(e.deltaY<0?.18:-.18)},{passive:false});
-addEventListener("keydown",e=>{if(scene===0)return;if(e.key==="ArrowLeft")goto(scene-1);if(e.key==="ArrowRight"&&completed)goto(scene===4?1:scene+1)});
+addEventListener("keydown",e=>{if(scene===0)return;if(e.key==="ArrowLeft")goto(scene-1,false);if(e.key==="ArrowRight"&&completed){if(scene===4)beginShow();else goto(scene+1,false)}});
 addEventListener("resize",()=>{clearTimeout(resizeTimer);resizeTimer=setTimeout(size,200)});
 size();requestAnimationFrame(draw);
 cowImage=new Image();cowImage.onload=renderCow;
